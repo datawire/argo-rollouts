@@ -3,7 +3,6 @@ kind: Service
 metadata:
   labels:
     app: echo
-    version: v1
   name: echo
 spec:
   type: ClusterIP
@@ -14,5 +13,4 @@ spec:
     targetPort: 8080
   selector:
     app: echo
-    version: v1
   sessionAffinity: None
