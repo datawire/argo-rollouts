@@ -29,9 +29,7 @@ spec:
     canary:
       steps:
       - setWeight: 20
-      # The following pause step will pause the rollout indefinitely until manually resumed.
-      # Rollouts can be manually resumed by running `kubectl argo rollouts resume ROLLOUT`
-      - pause: {}
+      - pause: {duration: 10s}
       - setWeight: 50
       - pause: {duration: 10s}
       - setWeight: 80
