@@ -5,4 +5,4 @@ metadata:
 spec:
   prefix: /echo
   rewrite: /echo
-  service: echo:80
+  service: echo-stable:80
