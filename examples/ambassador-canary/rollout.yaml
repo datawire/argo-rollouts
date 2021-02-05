@@ -16,6 +16,8 @@ spec:
       labels:
         app: echo
     spec:
+      stableService: echo-stable
+      canaryService: echo-canary
       containers:
         - image: hashicorp/http-echo
           args:

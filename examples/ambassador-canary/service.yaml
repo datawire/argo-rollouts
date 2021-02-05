@@ -3,7 +3,26 @@ kind: Service
 metadata:
   labels:
     app: echo
-  name: echo
+  name: echo-stable
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: echo
+  sessionAffinity: None
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: echo
+  name: echo-canary
 spec:
   type: ClusterIP
   ports:
