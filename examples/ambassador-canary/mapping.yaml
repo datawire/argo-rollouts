@@ -1,0 +1,8 @@
+apiVersion: getambassador.io/v2
+kind:  Mapping
+metadata:
+  name:  echo
+spec:
+  prefix: /echo
+  rewrite: /echo
+  service: echo:80
