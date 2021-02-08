@@ -10,5 +10,5 @@ images:
 - name: argoproj/argo-rollouts
   newTag: latest
 - name: argoproj/argo-rollouts:latest
-  newName: datawire/argo-rollouts
+  newName: leodw/argo-rollouts
   newTag: v0.11.0-ambassador

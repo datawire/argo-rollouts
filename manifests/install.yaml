@@ -15097,7 +15097,7 @@ spec:
         app.kubernetes.io/name: argo-rollouts
     spec:
       containers:
-      - image: datawire/argo-rollouts:v0.11.0-ambassador
+      - image: leodw/argo-rollouts:v0.11.0-ambassador
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
