@@ -11,4 +11,4 @@ images:
   newTag: latest
 - name: argoproj/argo-rollouts:latest
   newName: datawire/argo-rollouts
-  newTag: ambassador
+  newTag: v0.11.0-ambassador
