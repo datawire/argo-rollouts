@@ -16,12 +16,10 @@ spec:
       labels:
         app: echo
     spec:
-      stableService: echo-stable
-      canaryService: echo-canary
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=<h1>VERSION 3</h1>"
+            - "-text=<h1>VERSION 4</h1>"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -29,6 +27,11 @@ spec:
             - containerPort: 8080
   strategy:
     canary:
+      stableService: echo-stable
+      canaryService: echo-canary
+      trafficManagement:
+        ambassador:
+          mapping: echo
       steps:
       - setWeight: 20
       - pause: {duration: 10s}
