@@ -6,6 +6,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/alb"
+	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/ambassador"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/istio"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/nginx"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/smi"
@@ -62,6 +63,10 @@ func (c *Controller) NewTrafficRoutingReconciler(roCtx *rolloutContext) (Traffic
 			ControllerKind: controllerKind,
 			ApiVersion:     c.defaultTrafficSplitVersion,
 		})
+	}
+	if rollout.Spec.Strategy.Canary.TrafficRouting.Ambassador != nil {
+		ac := ambassador.NewDynamicClient(c.dynamicclientset, rollout.GetNamespace())
+		return ambassador.NewReconciler(rollout, ac, c.recorder), nil
 	}
 	return nil, nil
 }
