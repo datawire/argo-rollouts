@@ -15042,6 +15042,7 @@ rules:
   - get
   - update
   - list
+  - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -15097,7 +15098,7 @@ spec:
         app.kubernetes.io/name: argo-rollouts
     spec:
       containers:
-      - image: argoproj/argo-rollouts:latest
+      - image: datawire/argo-rollouts:v0.11.0-ambassador
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:

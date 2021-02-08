@@ -14958,6 +14958,7 @@ rules:
   - get
   - update
   - list
+  - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -15098,7 +15099,7 @@ spec:
       containers:
       - args:
         - --namespaced
-        image: argoproj/argo-rollouts:latest
+        image: datawire/argo-rollouts:v0.11.0-ambassador
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
