@@ -13,7 +13,8 @@ update_image () {
 }
 
 if [ ! -z "${IMAGE_TAG}" ]; then
-  (cd ${SRCROOT}/manifests/base && kustomize edit set image argoproj/argo-rollouts:${IMAGE_TAG})
+  IMAGE_GROUP="${IMAGE_NAMESPACE:-argoproj}"
+  (cd ${SRCROOT}/manifests/base && kustomize edit set image "argoproj/argo-rollouts:latest=${IMAGE_GROUP}/argo-rollouts:${IMAGE_TAG}")
 fi
 
 kustomize version

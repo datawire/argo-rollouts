@@ -9,3 +9,6 @@ resources:
 images:
 - name: argoproj/argo-rollouts
   newTag: latest
+- name: argoproj/argo-rollouts:latest
+  newName: datawire/argo-rollouts
+  newTag: ambassador

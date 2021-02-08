@@ -15098,7 +15098,7 @@ spec:
       containers:
       - args:
         - --namespaced
-        image: argoproj/argo-rollouts:latest
+        image: datawire/argo-rollouts:ambassador
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
