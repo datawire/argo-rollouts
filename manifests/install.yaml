@@ -12009,6 +12009,13 @@ spec:
                           - ingress
                           - servicePort
                           type: object
+                        ambassador:
+                          properties:
+                            mapping:
+                              type: string
+                          required:
+                          - mapping
+                          type: object
                         istio:
                           properties:
                             virtualService:
@@ -15080,7 +15087,7 @@ spec:
         app.kubernetes.io/name: argo-rollouts
     spec:
       containers:
-      - image: argoproj/argo-rollouts:latest
+      - image: datawire/argo-rollouts:ambassador
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
