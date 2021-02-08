@@ -146,7 +146,7 @@ func GetAmbassadorGVR() schema.GroupVersionResource {
 	return schema.GroupVersionResource{
 		Group:    "getambassador.io",
 		Version:  "v2",
-		Resource: "mapping",
+		Resource: "mappings",
 	}
 }
 
