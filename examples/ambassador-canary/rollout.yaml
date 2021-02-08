@@ -29,7 +29,7 @@ spec:
     canary:
       stableService: echo-stable
       canaryService: echo-canary
-      trafficManagement:
+      trafficRouting:
         ambassador:
           mapping: echo
       steps:
