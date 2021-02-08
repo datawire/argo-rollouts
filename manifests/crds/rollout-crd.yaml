@@ -475,6 +475,13 @@ spec:
                           - ingress
                           - servicePort
                           type: object
+                        ambassador:
+                          properties:
+                            mapping:
+                              type: string
+                          required:
+                          - mapping
+                          type: object
                         istio:
                           properties:
                             virtualService:
