@@ -19,7 +19,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 15"
+            - "-text=VERSION 16"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -33,9 +33,12 @@ spec:
         ambassador:
           mapping: echo
       steps:
-      - setWeight: 20
+      - setCanaryScale:
+          weight: 20
       - pause: {duration: 30s}
-      - setWeight: 50
+      - setCanaryScale:
+          weight: 50
       - pause: {duration: 30s}
-      - setWeight: 80
+      - setCanaryScale:
+          weight: 80
       - pause: {duration: 30s}
