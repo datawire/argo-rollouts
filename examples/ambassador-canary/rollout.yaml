@@ -19,7 +19,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 20"
+            - "-text=VERSION 21"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -36,8 +36,6 @@ spec:
       - setCanaryScale:
           replicas: 5
       - setWeight: 20
-      - pause: {duration: 10s}
-      - setWeight: 50
-      - pause: {duration: 10s}
+      - pause: {duration: 5m}
       - setWeight: 80
-      - pause: {duration: 10s}
+      - pause: {duration: 5m}
