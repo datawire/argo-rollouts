@@ -106,12 +106,21 @@ func (r *Reconciler) createCanaryMapping(ctx context.Context,
 		return fmt.Errorf(msg)
 	}
 
-	canaryMapping := baseMapping.DeepCopy()
-	cMappingName := buildCanaryMappingName(baseMapping.GetName())
-	canaryMapping.SetName(cMappingName)
-	setMappingWeight(canaryMapping, desiredWeight)
+	canarySvc := r.Rollout.Spec.Strategy.Canary.CanaryService
+	canaryMapping := buildCanaryMapping(baseMapping, canarySvc, desiredWeight)
 	_, err = client.Create(ctx, canaryMapping, metav1.CreateOptions{})
 	return err
+}
+
+func buildCanaryMapping(baseMapping *unstructured.Unstructured, canarySvc string, desiredWeight int32) *unstructured.Unstructured {
+	canaryMapping := baseMapping.DeepCopy()
+	unstructured.RemoveNestedField(canaryMapping.Object, "metadata")
+	cMappingName := buildCanaryMappingName(baseMapping.GetName())
+	canaryMapping.SetName(cMappingName)
+	canaryMapping.SetNamespace(baseMapping.GetNamespace())
+	unstructured.SetNestedField(canaryMapping.Object, canarySvc, "spec", "service")
+	setMappingWeight(canaryMapping, desiredWeight)
+	return canaryMapping
 }
 
 func (r *Reconciler) VerifyWeight(desiredWeight int32) (bool, error) {
@@ -122,16 +131,16 @@ func (r *Reconciler) Type() string {
 	return Type
 }
 
+func setMappingWeight(obj *unstructured.Unstructured, weight int32) {
+	unstructured.SetNestedField(obj.Object, int64(weight), "spec", "weight")
+}
+
 func GetMappingWeight(obj *unstructured.Unstructured) int64 {
 	weight, found, err := unstructured.NestedInt64(obj.Object, "spec", "weight")
 	if err != nil || !found {
 		return 0
 	}
 	return weight
-}
-
-func setMappingWeight(obj *unstructured.Unstructured, weight int32) {
-	unstructured.SetNestedField(obj.Object, int64(weight), "spec", "weight")
 }
 
 func buildCanaryMappingName(name string) string {
