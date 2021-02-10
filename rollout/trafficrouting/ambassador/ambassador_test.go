@@ -40,13 +40,6 @@ spec:
   service: myapp:8080
   weight: 20`
 
-	veryLongMappingName = `
-apiVersion: getambassador.io/v2
-kind:  Mapping
-metadata:
-  name: very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-
-  namespace: default`
-
 	canaryMapping = `
 apiVersion: getambassador.io/v2
 kind:  Mapping
