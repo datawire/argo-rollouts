@@ -74,7 +74,7 @@ func (r *Reconciler) SetWeight(desiredWeight int32) error {
 
 	canaryMapping, err := r.Client.Get(ctx, canaryMappingName, metav1.GetOptions{})
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) && desiredWeight > 0 {
 			return r.createCanaryMapping(ctx, baseMappingName, desiredWeight, r.Client)
 		}
 		return err
