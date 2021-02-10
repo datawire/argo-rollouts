@@ -121,6 +121,10 @@ func (r *Reconciler) createCanaryMapping(ctx context.Context,
 	desiredWeight int32,
 	client ClientInterface) error {
 
+	if desiredWeight == 0 {
+		return nil
+	}
+
 	baseMapping, err := client.Get(ctx, baseMappingName, metav1.GetOptions{})
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
