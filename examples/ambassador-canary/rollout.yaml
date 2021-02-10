@@ -19,7 +19,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 51"
+            - "-text=VERSION 52"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -39,3 +39,5 @@ spec:
       - pause: {duration: 10s}
       - setWeight: 80
       - pause: {duration: 10s}
+      - setWeight: 100
+      - pause: {duration: 30s}
