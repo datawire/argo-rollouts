@@ -38,6 +38,7 @@ type ClientInterface interface {
 	Get(ctx context.Context, name string, options metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error)
 	Create(ctx context.Context, obj *unstructured.Unstructured, options metav1.CreateOptions, subresources ...string) (*unstructured.Unstructured, error)
 	Update(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error)
+	Delete(ctx context.Context, name string, options metav1.DeleteOptions, subresources ...string) error
 }
 
 // NewDynamicClient will initialize a real kubernetes dynamic client to interact
@@ -80,6 +81,11 @@ func (r *Reconciler) updateCanaryMapping(ctx context.Context,
 	canaryMapping *unstructured.Unstructured,
 	desiredWeight int32,
 	client ClientInterface) error {
+
+	if desiredWeight == 0 {
+		// when rollout concludes the canary mapping needs to be removed
+		return client.Delete(ctx, canaryMapping.GetName(), metav1.DeleteOptions{})
+	}
 
 	setMappingWeight(canaryMapping, desiredWeight)
 	_, err := client.Update(ctx, canaryMapping, metav1.UpdateOptions{})

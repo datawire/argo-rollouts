@@ -24,7 +24,6 @@ metadata:
   name: myapp-mapping
   namespace: default
 spec:
-  host: somedomain.com
   prefix: /myapp/
   rewrite: /myapp/
   service: myapp:8080`
@@ -36,7 +35,6 @@ metadata:
   name: myapp-mapping
   namespace: default
 spec:
-  host: somedomain.com
   prefix: /myapp/
   rewrite: /myapp/
   service: myapp:8080
@@ -48,6 +46,18 @@ kind:  Mapping
 metadata:
   name: very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-very-long-mapping-name-
   namespace: default`
+
+	canaryMapping = `
+apiVersion: getambassador.io/v2
+kind:  Mapping
+metadata:
+  name: myapp-mapping-canary
+  namespace: default
+spec:
+  prefix: /myapp/
+  rewrite: /myapp/
+  service: myapp:8080
+  weight: 20`
 )
 
 type fakeClient struct {
@@ -55,6 +65,18 @@ type fakeClient struct {
 	getReturns        []*getReturn
 	createInvokations []*createInvokation
 	createReturns     []*createReturn
+	updateInvokations []*updateInvokation
+	updateReturns     []error
+	deleteInvokations []*deleteInvokation
+	deleteReturns     []error
+}
+
+type deleteInvokation struct {
+	name string
+}
+
+type updateInvokation struct {
+	obj *unstructured.Unstructured
 }
 
 type getInvokation struct {
@@ -108,7 +130,29 @@ func (f *fakeClient) Create(ctx context.Context, obj *unstructured.Unstructured,
 }
 
 func (f *fakeClient) Update(ctx context.Context, obj *unstructured.Unstructured, options metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	return nil, nil
+	invokation := &updateInvokation{obj: obj}
+	f.updateInvokations = append(f.updateInvokations, invokation)
+	if len(f.updateReturns) == 0 {
+		return nil, nil
+	}
+	err := f.updateReturns[0]
+	if len(f.updateReturns) >= len(f.updateInvokations) {
+		err = f.updateReturns[len(f.updateInvokations)-1]
+	}
+	return nil, err
+}
+
+func (f *fakeClient) Delete(ctx context.Context, name string, options metav1.DeleteOptions, subresources ...string) error {
+	invokation := &deleteInvokation{name: name}
+	f.deleteInvokations = append(f.deleteInvokations, invokation)
+	if len(f.deleteReturns) == 0 {
+		return nil
+	}
+	err := f.deleteReturns[0]
+	if len(f.deleteReturns) >= len(f.deleteInvokations) {
+		err = f.deleteReturns[len(f.deleteInvokations)-1]
+	}
+	return err
 }
 
 func TestReconciler_SetWeight(t *testing.T) {
@@ -160,6 +204,56 @@ func TestReconciler_SetWeight(t *testing.T) {
 		assert.Equal(t, "myapp-mapping", f.fakeClient.getInvokations[1].name)
 		assert.Equal(t, 1, len(f.fakeClient.createInvokations))
 		assert.Equal(t, int64(13), ambassador.GetMappingWeight(f.fakeClient.createInvokations[0].obj))
+		assert.Equal(t, 0, len(f.fakeClient.updateInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.deleteInvokations))
+	})
+	t.Run("will update canary mapping according to provided weight", func(t *testing.T) {
+		// given
+		t.Parallel()
+		f := setup()
+		getReturns := []*getReturn{
+			{obj: toUnstructured(t, canaryMapping)},
+		}
+		createReturns := []*createReturn{
+			{nil, nil},
+		}
+		f.fakeClient.getReturns = getReturns
+		f.fakeClient.createReturns = createReturns
+
+		// when
+		err := f.reconciler.SetWeight(13)
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(f.fakeClient.getInvokations))
+		assert.Equal(t, "myapp-mapping-canary", f.fakeClient.getInvokations[0].name)
+		assert.Equal(t, 0, len(f.fakeClient.createInvokations))
+		assert.Equal(t, 1, len(f.fakeClient.updateInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.deleteInvokations))
+	})
+	t.Run("will delete canary mapping if provided weight is zero", func(t *testing.T) {
+		// given
+		t.Parallel()
+		f := setup()
+		getReturns := []*getReturn{
+			{obj: toUnstructured(t, canaryMapping)},
+		}
+		createReturns := []*createReturn{
+			{nil, nil},
+		}
+		f.fakeClient.getReturns = getReturns
+		f.fakeClient.createReturns = createReturns
+
+		// when
+		err := f.reconciler.SetWeight(0)
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(f.fakeClient.getInvokations))
+		assert.Equal(t, "myapp-mapping-canary", f.fakeClient.getInvokations[0].name)
+		assert.Equal(t, 0, len(f.fakeClient.createInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.updateInvokations))
+		assert.Equal(t, 1, len(f.fakeClient.deleteInvokations))
 	})
 	t.Run("will return error if base mapping defines the weight", func(t *testing.T) {
 		// given
@@ -180,6 +274,8 @@ func TestReconciler_SetWeight(t *testing.T) {
 		assert.Equal(t, "myapp-mapping-canary", f.fakeClient.getInvokations[0].name)
 		assert.Equal(t, "myapp-mapping", f.fakeClient.getInvokations[1].name)
 		assert.Equal(t, 0, len(f.fakeClient.createInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.updateInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.deleteInvokations))
 	})
 	t.Run("will return error if base mapping not found", func(t *testing.T) {
 		// given
@@ -200,6 +296,8 @@ func TestReconciler_SetWeight(t *testing.T) {
 		assert.Equal(t, "myapp-mapping-canary", f.fakeClient.getInvokations[0].name)
 		assert.Equal(t, "myapp-mapping", f.fakeClient.getInvokations[1].name)
 		assert.Equal(t, 0, len(f.fakeClient.createInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.updateInvokations))
+		assert.Equal(t, 0, len(f.fakeClient.deleteInvokations))
 	})
 	t.Run("will respect kube resource name size when creating the canary mapping", func(t *testing.T) {
 		// given
