@@ -22,6 +22,10 @@ const (
 	Type                         = "Ambassador"
 	AmbassadorMappingNotFound    = "AmbassadorMappingNotFound"
 	AmbassadorMappingConfigError = "AmbassadorMappingConfigError"
+	CanaryMappingCleanupError    = "CanaryMappingCleanupError"
+	CanaryMappingCreationError   = "CanaryMappingCreationError"
+	CanaryMappingUpdateError     = "CanaryMappingUpdateError"
+	CanaryMappingWeightUpdate    = "CanaryMappingWeightUpdate"
 )
 
 // Reconciler implements a TrafficRoutingReconciler for Ambassador.
@@ -64,6 +68,7 @@ func NewReconciler(r *v1alpha1.Rollout, c ClientInterface, rec record.EventRecor
 // desiredWeight.
 func (r *Reconciler) SetWeight(desiredWeight int32) error {
 	ctx := context.TODO()
+	r.sendNormalEvent(CanaryMappingWeightUpdate, fmt.Sprintf("Updating canary mapping weight to %d", desiredWeight))
 	baseMappingName := r.Rollout.Spec.Strategy.Canary.TrafficRouting.Ambassador.Mapping
 	canaryMappingName := buildCanaryMappingName(baseMappingName)
 
@@ -84,12 +89,31 @@ func (r *Reconciler) updateCanaryMapping(ctx context.Context,
 
 	if desiredWeight == 0 {
 		// when rollout concludes the canary mapping needs to be removed
-		return client.Delete(ctx, canaryMapping.GetName(), metav1.DeleteOptions{})
+		return r.deleteCanaryMapping(ctx, canaryMapping, desiredWeight, client)
 	}
 
 	setMappingWeight(canaryMapping, desiredWeight)
 	_, err := client.Update(ctx, canaryMapping, metav1.UpdateOptions{})
+	if err != nil {
+		msg := fmt.Sprintf("Error updating canary mapping %q: %s", canaryMapping.GetName(), err)
+		r.sendWarningEvent(CanaryMappingUpdateError, msg)
+	}
 	return err
+}
+
+func (r *Reconciler) deleteCanaryMapping(ctx context.Context,
+	canaryMapping *unstructured.Unstructured,
+	desiredWeight int32,
+	client ClientInterface) error {
+
+	err := client.Delete(ctx, canaryMapping.GetName(), metav1.DeleteOptions{})
+	if err != nil {
+		msg := fmt.Sprintf("Error deleting canary mapping %q: %s", canaryMapping.GetName(), err)
+		r.sendWarningEvent(CanaryMappingCleanupError, msg)
+		return err
+	}
+	return nil
+
 }
 
 func (r *Reconciler) createCanaryMapping(ctx context.Context,
@@ -115,6 +139,10 @@ func (r *Reconciler) createCanaryMapping(ctx context.Context,
 	canarySvc := r.Rollout.Spec.Strategy.Canary.CanaryService
 	canaryMapping := buildCanaryMapping(baseMapping, canarySvc, desiredWeight)
 	_, err = client.Create(ctx, canaryMapping, metav1.CreateOptions{})
+	if err != nil {
+		msg := fmt.Sprintf("Error creating canary mapping: %s", err)
+		r.sendWarningEvent(CanaryMappingCreationError, msg)
+	}
 	return err
 }
 
