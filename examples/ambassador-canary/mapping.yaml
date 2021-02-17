@@ -6,3 +6,4 @@ spec:
   prefix: /echo
   rewrite: /echo
   service: echo-stable:80
+  resolver: endpoint
