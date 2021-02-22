@@ -29,12 +29,17 @@ const (
 	CanaryMappingWeightUpdate    = "CanaryMappingWeightUpdate"
 )
 
+type Webhooker interface {
+	SendSetWeightEvent(desiredWeight int32, rollout *v1alpha1.Rollout)
+}
+
 // Reconciler implements a TrafficRoutingReconciler for Ambassador.
 type Reconciler struct {
 	Rollout  *v1alpha1.Rollout
 	Client   ClientInterface
 	Recorder record.EventRecorder
 	Log      *logrus.Entry
+	webhook  Webhooker
 }
 
 // ClientInterface defines a subset of k8s client operations having only the required
@@ -53,12 +58,13 @@ func NewDynamicClient(di dynamic.Interface, namespace string) dynamic.ResourceIn
 }
 
 // NewReconciler will build and return an ambassador Reconciler
-func NewReconciler(r *v1alpha1.Rollout, c ClientInterface, rec record.EventRecorder) *Reconciler {
+func NewReconciler(r *v1alpha1.Rollout, c ClientInterface, rec record.EventRecorder, wh Webhooker) *Reconciler {
 	return &Reconciler{
 		Rollout:  r,
 		Client:   c,
 		Recorder: rec,
 		Log:      logutil.WithRollout(r),
+		webhook:  wh,
 	}
 }
 
@@ -71,6 +77,7 @@ func (r *Reconciler) SetWeight(desiredWeight int32) error {
 
 	r.sendNormalEvent(CanaryMappingWeightUpdate, fmt.Sprintf("Set canary mapping weight to %d", desiredWeight))
 	ctx := context.TODO()
+	defer r.sendWeightEvent(desiredWeight)
 	baseMappingName := r.Rollout.Spec.Strategy.Canary.TrafficRouting.Ambassador.Mapping
 	canaryMappingName := buildCanaryMappingName(baseMappingName)
 
@@ -97,6 +104,12 @@ func (r *Reconciler) SetWeight(desiredWeight int32) error {
 
 	r.Log.Infof("updating canary mapping %q weight to %d", canaryMapping.GetName(), desiredWeight)
 	return r.updateCanaryMapping(ctx, canaryMapping, desiredWeight, r.Client)
+}
+
+func (r *Reconciler) sendWeightEvent(desiredWeight int32) {
+	if (r.webhook) != nil {
+		go r.webhook.SendSetWeightEvent(desiredWeight, r.Rollout)
+	}
 }
 
 func (r *Reconciler) updateCanaryMapping(ctx context.Context,
