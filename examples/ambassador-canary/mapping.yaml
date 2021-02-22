@@ -3,6 +3,7 @@ kind:  Mapping
 metadata:
   name:  echo
 spec:
+  cluster_max_connection_lifetime_ms: 5000
   prefix: /echo
   rewrite: /echo
   service: echo-stable:80
