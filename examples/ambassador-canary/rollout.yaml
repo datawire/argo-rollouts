@@ -5,6 +5,9 @@ apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: echo-rollout
+  annotations:
+    getambassador.io/rolloutId: "0c872853-3ad4-4b9e-a55f-2fc49be42186"
+    getambassador.io/webhookUrl: "https://beta-app.datawire.io/cloud/webhooks/rollout"
 spec:
   replicas: 5
   revisionHistoryLimit: 2
@@ -19,7 +22,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 124"
+            - "-text=VERSION 125"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
