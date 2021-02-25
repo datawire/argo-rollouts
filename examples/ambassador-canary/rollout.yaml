@@ -6,7 +6,7 @@ kind: Rollout
 metadata:
   name: echo-rollout
   annotations:
-    getambassador.io/rolloutId: "0c872853-3ad4-4b9e-a55f-2fc49be42186"
+    getambassador.io/rolloutId: "93ca02c4-ebb5-4957-add0-c5fb2a88acb8"
     getambassador.io/webhookUrl: "https://beta-app.datawire.io/cloud/webhooks/rollout"
 spec:
   replicas: 5
