@@ -22,7 +22,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 138"
+            - "-text=VERSION 139"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
