@@ -12011,10 +12011,12 @@ spec:
                           type: object
                         ambassador:
                           properties:
-                            mapping:
-                              type: string
+                            mappings:
+                              items:
+                                type: string
+                              type: array
                           required:
-                          - mapping
+                          - mappings
                           type: object
                         istio:
                           properties:
@@ -15099,7 +15101,7 @@ spec:
       containers:
       - args:
         - --namespaced
-        image: datawire/argo-rollouts:v0.11.0-ambassador
+        image: datawire/argo-rollouts:vambassador-v1
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
