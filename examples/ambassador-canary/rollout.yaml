@@ -34,7 +34,9 @@ spec:
       canaryService: echo-canary
       trafficRouting:
         ambassador:
-          mapping: echo
+          mappings:
+            - echo
+            - echo2
       steps:
       - setWeight: 20
       - pause: {duration: 10s}
