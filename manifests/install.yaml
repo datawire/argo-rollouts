@@ -12011,6 +12011,8 @@ spec:
                           type: object
                         ambassador:
                           properties:
+                            apiVersion:
+                              type: string
                             mappings:
                               items:
                                 type: string
