@@ -34,7 +34,7 @@ spec:
   resolver: endpoint
   prefix: /demo
   rewrite: /
-  service: rollouts-demo:80
+  service: rollouts-demo-stable:80
 
 ---
 
