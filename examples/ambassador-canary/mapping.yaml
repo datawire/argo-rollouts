@@ -24,6 +24,6 @@ metadata:
   name:  echov1
 spec:
   resolver: endpoint
-  prefix: /echo2
+  prefix: /echov1
   rewrite: /echo
   service: echo-stable:80
