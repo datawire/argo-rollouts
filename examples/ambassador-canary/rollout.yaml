@@ -22,7 +22,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 141"
+            - "-text=VERSION 142"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -37,6 +37,7 @@ spec:
           mappings:
             - echo
             - echo2
+            - echov1
       steps:
       - setWeight: 20
       - pause: {duration: 10s}
