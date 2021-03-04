@@ -17,3 +17,13 @@ spec:
   prefix: /echo2
   rewrite: /echo
   service: echo-stable:80
+---
+apiVersion: getambassador.io/v1
+kind:  Mapping
+metadata:
+  name:  echov1
+spec:
+  resolver: endpoint
+  prefix: /echo2
+  rewrite: /echo
+  service: echo-stable:80
