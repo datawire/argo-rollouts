@@ -11,4 +11,4 @@ images:
   newTag: latest
 - name: argoproj/argo-rollouts:latest
   newName: datawire/argo-rollouts
-  newTag: vambassador-v1
+  newTag: vambassador-v2

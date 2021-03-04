@@ -15100,7 +15100,7 @@ spec:
         app.kubernetes.io/name: argo-rollouts
     spec:
       containers:
-      - image: datawire/argo-rollouts:vambassador-v1
+      - image: datawire/argo-rollouts:vambassador-v2
         imagePullPolicy: Always
         name: argo-rollouts
       securityContext:
