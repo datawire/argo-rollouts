@@ -13,6 +13,18 @@ spec:
 
 ---
 
+apiVersion: getambassador.io/v2
+kind:  Mapping
+metadata:
+  name:  rollouts-demo
+spec:
+  resolver: endpoint
+  prefix: /demo
+  rewrite: /demo
+  service: rollouts-demo:80
+
+---
+
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
