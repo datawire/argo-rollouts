@@ -20,7 +20,7 @@ metadata:
 spec:
   resolver: endpoint
   prefix: /demo
-  rewrite: /demo
+  rewrite: /
   service: rollouts-demo:80
 
 ---
