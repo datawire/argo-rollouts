@@ -1,8 +1,8 @@
 # Ambassador Edge Stack
 
-Ambassador Edge Stack provides the functionality you need at the edge your Kubernetes cluster (hence, an "edge stack"). This includes an API gateway, ingress controller, load balancer, developer portal, canary traffic routing and more. It provides a group of CRDs that users can configure to enable different functionalities. 
+[Ambassador Edge Stack](https://www.getambassador.io/products/edge-stack/) provides the functionality you need at the edge your Kubernetes cluster (hence, an "edge stack"). This includes an API gateway, ingress controller, load balancer, developer portal, canary traffic routing and more. It provides a group of CRDs that users can configure to enable different functionalities. 
 
-Argo-Rollouts provides an integration that leverages Ambassador's [canary routing capability](https://www.getambassador.io/docs/pre-release/topics/using/canary/). This allows the traffic to your application to be gradually incremented while new versions are being deployed.
+Argo-Rollouts provides an integration that leverages Ambassador's [canary routing capability](https://www.getambassador.io/docs/latest/topics/using/canary/). This allows the traffic to your application to be gradually incremented while new versions are being deployed.
 
 ## How it works
 
@@ -31,7 +31,7 @@ spec:
 
 In the example above we are configuring Ambassador to route 30% of the traffic coming from `<public ingress>/someapp` to the service `someapp-canary` and the rest of the traffic will go to the service `someapp-stable`. If users want to gradually increase the traffic to the canary service, they have to update the `canary-mapping` setting the weight to the desired value either manually or automating it somehow. 
 
-With Argo-Rollouts there is no need to create the `canary-mapping`. The process of creating it and gradually update its weight is fully automated by the Argo-Rollouts controller. The following example shows how to configure the `Rollout` resource to use Ambassador as a traffic router for canary deployments:
+With Argo-Rollouts there is no need to create the `canary-mapping`. The process of creating it and gradually updating its weight is fully automated by the Argo-Rollouts controller. The following example shows how to configure the `Rollout` resource to use Ambassador as a traffic router for canary deployments:
 
 
 ```yaml
@@ -58,7 +58,7 @@ spec:
 Under `spec.strategy.canary.trafficRouting.ambassador` there are 2 possible attributes:
 
 - `apiVersion`: Optional. If you are using an older version of Ambassador you can specify its `apiVersion` (e.g.: `getambassador.io/v1`). If not provided, Argo-Rollouts will use the default value as `getambassador.io/v2`
-- `mappings`: Required. If your application exposes 2 different ports for different servers (e.g.: REST and gRPC) you can provide the stable mappings in this list and Argo-Rollouts will create the canary mappings for both of them. At least one mapping is necessary to be provided. If no mapping is provided Argo-Rollouts will send an error event and the rollout will be aborted. 
+- `mappings`: Required. At least one Ambassador mapping must be provided for Argo-Rollouts to be able to manage the canary deployment. Multiple mappings are also supported in case there are multiple routes to the service (e.g., your service has multiple ports, or can be accessed via different URLs). If no mapping is provided Argo-Rollouts will send an error event and the rollout will be aborted. 
 
 When Ambassador is configured in the `trafficRouting` attribute of the manifest, the Rollout controller will:
 1. Create one canary mapping for each stable mapping provided in the Rollout manifest
@@ -67,7 +67,7 @@ When Ambassador is configured in the `trafficRouting` attribute of the manifest,
 
 ## Endpoint Resolver
 
-Argo-Rollout will dynamically modify the `Service` selectors when the rollout starts and when it concludes in order to do version promotion. Ambassador mappings use service resolver by default to route traffic to Pods. However when the connection is opened, changes in the service selectors aren't directly reflected and traffic can be sent to old pods if they are still alive. For this reason, it is important to configure Ambassador mappings to use endpoint resolver to avoid this problem.
+By default, Ambassador uses kube-proxy to route traffic to Pods. However we should configure it to bypass kube-proxy and route traffic directly to pods. This will provide true L7 load balancing which is desirable in a canary workflow. This approach is called [endpoint routing](https://www.getambassador.io/docs/latest/topics/running/load-balancer/) and can be achieve by configuring [endpoint resolvers](https://www.getambassador.io/docs/latest/topics/running/resolvers/#the-kubernetes-endpoint-resolver).
 
 To configure Ambassador to use endpoint resolver it is necessary to apply the following resource in the cluster:
 
@@ -78,7 +78,7 @@ metadata:
   name: endpoint
 ```
 
-And then configure the mapping to use it:
+And then configure the mapping to use it setting the `resolver` attribute:
 
 ```
 apiVersion: getambassador.io/v2
@@ -91,3 +91,5 @@ spec:
   rewrite: /
   service: someapp-stable:80
 ```
+
+For more details about the Ambassador and Argo-Rollouts integration, see the [Ambassador Argo documentation](https://deploy-preview-508--datawire-ambassador.netlify.app/docs/pre-release/argo/).
