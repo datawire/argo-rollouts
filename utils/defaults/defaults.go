@@ -1,6 +1,10 @@
 package defaults
 
 import (
+	"io/ioutil"
+	"os"
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
@@ -14,7 +18,7 @@ const (
 	// DefaultMaxSurge default number for the max number of additional pods that can be brought up during a rollout
 	DefaultMaxSurge = "25"
 	// DefaultMaxUnavailable default number for the max number of unavailable pods during a rollout
-	DefaultMaxUnavailable = 0
+	DefaultMaxUnavailable = "25"
 	// DefaultProgressDeadlineSeconds default number of seconds for the rollout to be making progress
 	DefaultProgressDeadlineSeconds = int32(600)
 	// DefaultScaleDownDelaySeconds default seconds before scaling down old replicaset after switching services
@@ -24,6 +28,12 @@ const (
 	// DefaultConsecutiveErrorLimit is the default number times a metric can error in sequence before
 	// erroring the entire metric.
 	DefaultConsecutiveErrorLimit int32 = 4
+)
+
+const (
+	DefaultAmbassadorVersion      = "v2"
+	DefaultIstioVersion           = "v1alpha3"
+	DefaultSMITrafficSplitVersion = "v1alpha1"
 )
 
 // GetReplicasOrDefault returns the deferenced number of replicas or the default number
@@ -51,10 +61,13 @@ func GetMaxSurgeOrDefault(rollout *v1alpha1.Rollout) *intstr.IntOrString {
 }
 
 func GetMaxUnavailableOrDefault(rollout *v1alpha1.Rollout) *intstr.IntOrString {
+	if rollout.Spec.Strategy.BlueGreen != nil && rollout.Spec.Strategy.BlueGreen.MaxUnavailable != nil {
+		return rollout.Spec.Strategy.BlueGreen.MaxUnavailable
+	}
 	if rollout.Spec.Strategy.Canary != nil && rollout.Spec.Strategy.Canary.MaxUnavailable != nil {
 		return rollout.Spec.Strategy.Canary.MaxUnavailable
 	}
-	defaultValue := intstr.FromInt(DefaultMaxUnavailable)
+	defaultValue := intstr.FromString(DefaultMaxUnavailable)
 	return &defaultValue
 }
 
@@ -89,15 +102,21 @@ func GetExperimentProgressDeadlineSecondsOrDefault(e *v1alpha1.Experiment) int32
 }
 
 func GetScaleDownDelaySecondsOrDefault(rollout *v1alpha1.Rollout) int32 {
-	if rollout.Spec.Strategy.BlueGreen == nil {
+	if rollout.Spec.Strategy.BlueGreen != nil {
+		if rollout.Spec.Strategy.BlueGreen.ScaleDownDelaySeconds != nil {
+			return *rollout.Spec.Strategy.BlueGreen.ScaleDownDelaySeconds
+		}
 		return DefaultScaleDownDelaySeconds
 	}
-
-	if rollout.Spec.Strategy.BlueGreen.ScaleDownDelaySeconds == nil {
-		return DefaultScaleDownDelaySeconds
+	if rollout.Spec.Strategy.Canary != nil {
+		if rollout.Spec.Strategy.Canary.TrafficRouting != nil {
+			if rollout.Spec.Strategy.Canary.ScaleDownDelaySeconds != nil {
+				return *rollout.Spec.Strategy.Canary.ScaleDownDelaySeconds
+			}
+			return DefaultScaleDownDelaySeconds
+		}
 	}
-
-	return *rollout.Spec.Strategy.BlueGreen.ScaleDownDelaySeconds
+	return 0
 }
 
 func GetAutoPromotionEnabledOrDefault(rollout *v1alpha1.Rollout) bool {
@@ -115,4 +134,19 @@ func GetConsecutiveErrorLimitOrDefault(metric *v1alpha1.Metric) int32 {
 		return int32(metric.ConsecutiveErrorLimit.IntValue())
 	}
 	return DefaultConsecutiveErrorLimit
+}
+
+func Namespace() string {
+	// This way assumes you've set the POD_NAMESPACE environment variable using the downward API.
+	// This check has to be done first for backwards compatibility with the way InClusterConfig was originally set up
+	if ns, ok := os.LookupEnv("POD_NAMESPACE"); ok {
+		return ns
+	}
+	// Fall back to the namespace associated with the service account token, if available
+	if data, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+		if ns := strings.TrimSpace(string(data)); len(ns) > 0 {
+			return ns
+		}
+	}
+	return "argo-rollouts"
 }

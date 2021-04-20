@@ -5,7 +5,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/alb"
+	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/ambassador"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/istio"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/nginx"
 	"github.com/argoproj/argo-rollouts/rollout/trafficrouting/smi"
@@ -15,6 +17,8 @@ import (
 
 // TrafficRoutingReconciler common function across all TrafficRouting implementation
 type TrafficRoutingReconciler interface {
+	// UpdateHash informs a traffic routing reconciler about new canary/stable pod hashes
+	UpdateHash(canaryHash, stableHash string) error
 	// SetWeight sets the canary weight to the desired weight
 	SetWeight(desiredWeight int32) error
 	// VerifyWeight returns true if the canary is at the desired weight
@@ -30,10 +34,10 @@ func (c *Controller) NewTrafficRoutingReconciler(roCtx *rolloutContext) (Traffic
 		return nil, nil
 	}
 	if rollout.Spec.Strategy.Canary.TrafficRouting.Istio != nil {
-		if c.istioVirtualServiceInformer.HasSynced() {
-			return istio.NewReconciler(rollout, c.dynamicclientset, c.recorder, c.defaultIstioVersion, c.istioVirtualServiceLister), nil
+		if c.IstioController.VirtualServiceInformer.HasSynced() {
+			return istio.NewReconciler(rollout, c.dynamicclientset, c.recorder, c.IstioController.VirtualServiceLister, c.IstioController.DestinationRuleLister), nil
 		} else {
-			return istio.NewReconciler(rollout, c.dynamicclientset, c.recorder, c.defaultIstioVersion, nil), nil
+			return istio.NewReconciler(rollout, c.dynamicclientset, c.recorder, nil, nil), nil
 		}
 	}
 	if rollout.Spec.Strategy.Canary.TrafficRouting.Nginx != nil {
@@ -60,8 +64,11 @@ func (c *Controller) NewTrafficRoutingReconciler(roCtx *rolloutContext) (Traffic
 			Client:         c.smiclientset,
 			Recorder:       c.recorder,
 			ControllerKind: controllerKind,
-			ApiVersion:     c.defaultTrafficSplitVersion,
 		})
+	}
+	if rollout.Spec.Strategy.Canary.TrafficRouting.Ambassador != nil {
+		ac := ambassador.NewDynamicClient(c.dynamicclientset, rollout.GetNamespace())
+		return ambassador.NewReconciler(rollout, ac, c.recorder), nil
 	}
 	return nil, nil
 }
@@ -75,6 +82,18 @@ func (c *rolloutContext) reconcileTrafficRouting() error {
 		return nil
 	}
 	c.log.Infof("Reconciling TrafficRouting with type '%s'", reconciler.Type())
+
+	var canaryHash, stableHash string
+	if c.stableRS != nil {
+		stableHash = c.stableRS.Labels[v1alpha1.DefaultRolloutUniqueLabelKey]
+	}
+	if c.newRS != nil {
+		canaryHash = c.newRS.Labels[v1alpha1.DefaultRolloutUniqueLabelKey]
+	}
+	err = reconciler.UpdateHash(canaryHash, stableHash)
+	if err != nil {
+		return err
+	}
 
 	currentStep, index := replicasetutil.GetCurrentCanaryStep(c.rollout)
 	desiredWeight := int32(0)

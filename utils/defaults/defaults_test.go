@@ -47,7 +47,7 @@ func TestGetMaxSurgeOrDefault(t *testing.T) {
 
 func TestGetMaxUnavailableOrDefault(t *testing.T) {
 	maxUnavailable := intstr.FromInt(2)
-	rolloutNonDefaultValue := &v1alpha1.Rollout{
+	rolloutCanaryNonDefaultValue := &v1alpha1.Rollout{
 		Spec: v1alpha1.RolloutSpec{
 			Strategy: v1alpha1.RolloutStrategy{
 				Canary: &v1alpha1.CanaryStrategy{
@@ -57,9 +57,21 @@ func TestGetMaxUnavailableOrDefault(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, maxUnavailable, *GetMaxUnavailableOrDefault(rolloutNonDefaultValue))
+	assert.Equal(t, maxUnavailable, *GetMaxUnavailableOrDefault(rolloutCanaryNonDefaultValue))
+
+	rolloutBlueGreenNonDefaultValue := &v1alpha1.Rollout{
+		Spec: v1alpha1.RolloutSpec{
+			Strategy: v1alpha1.RolloutStrategy{
+				BlueGreen: &v1alpha1.BlueGreenStrategy{
+					MaxUnavailable: &maxUnavailable,
+				},
+			},
+		},
+	}
+	assert.Equal(t, maxUnavailable, *GetMaxUnavailableOrDefault(rolloutBlueGreenNonDefaultValue))
+
 	rolloutDefaultValue := &v1alpha1.Rollout{}
-	assert.Equal(t, intstr.FromInt(DefaultMaxUnavailable), *GetMaxUnavailableOrDefault(rolloutDefaultValue))
+	assert.Equal(t, intstr.FromString(DefaultMaxUnavailable), *GetMaxUnavailableOrDefault(rolloutDefaultValue))
 }
 
 func TestGetCanaryIngressAnnotationPrefixOrDefault(t *testing.T) {
@@ -124,28 +136,60 @@ func TestGetProgressDeadlineSecondsOrDefault(t *testing.T) {
 }
 
 func TestGetScaleDownDelaySecondsOrDefault(t *testing.T) {
-	scaleDownDelaySeconds := int32(60)
-	rolloutNonDefaultValue := &v1alpha1.Rollout{
-		Spec: v1alpha1.RolloutSpec{
-			Strategy: v1alpha1.RolloutStrategy{
-				BlueGreen: &v1alpha1.BlueGreenStrategy{
-					ScaleDownDelaySeconds: &scaleDownDelaySeconds,
+	{
+		scaleDownDelaySeconds := int32(60)
+		blueGreenNonDefaultValue := &v1alpha1.Rollout{
+			Spec: v1alpha1.RolloutSpec{
+				Strategy: v1alpha1.RolloutStrategy{
+					BlueGreen: &v1alpha1.BlueGreenStrategy{
+						ScaleDownDelaySeconds: &scaleDownDelaySeconds,
+					},
 				},
 			},
-		},
+		}
+		assert.Equal(t, scaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(blueGreenNonDefaultValue))
 	}
-
-	assert.Equal(t, scaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(rolloutNonDefaultValue))
-	rolloutNoStrategyDefaultValue := &v1alpha1.Rollout{}
-	assert.Equal(t, DefaultScaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(rolloutNoStrategyDefaultValue))
-	rolloutNoScaleDownDelaySeconds := &v1alpha1.Rollout{
-		Spec: v1alpha1.RolloutSpec{
-			Strategy: v1alpha1.RolloutStrategy{
-				BlueGreen: &v1alpha1.BlueGreenStrategy{},
+	{
+		rolloutNoStrategyDefaultValue := &v1alpha1.Rollout{}
+		assert.Equal(t, int32(0), GetScaleDownDelaySecondsOrDefault(rolloutNoStrategyDefaultValue))
+	}
+	{
+		rolloutNoScaleDownDelaySeconds := &v1alpha1.Rollout{
+			Spec: v1alpha1.RolloutSpec{
+				Strategy: v1alpha1.RolloutStrategy{
+					BlueGreen: &v1alpha1.BlueGreenStrategy{},
+				},
 			},
-		},
+		}
+		assert.Equal(t, DefaultScaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(rolloutNoScaleDownDelaySeconds))
 	}
-	assert.Equal(t, DefaultScaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(rolloutNoScaleDownDelaySeconds))
+	{
+		scaleDownDelaySeconds := int32(60)
+		canaryNoTrafficRouting := &v1alpha1.Rollout{
+			Spec: v1alpha1.RolloutSpec{
+				Strategy: v1alpha1.RolloutStrategy{
+					Canary: &v1alpha1.CanaryStrategy{
+						ScaleDownDelaySeconds: &scaleDownDelaySeconds,
+					},
+				},
+			},
+		}
+		assert.Equal(t, int32(0), GetScaleDownDelaySecondsOrDefault(canaryNoTrafficRouting))
+	}
+	{
+		scaleDownDelaySeconds := int32(60)
+		canaryWithTrafficRouting := &v1alpha1.Rollout{
+			Spec: v1alpha1.RolloutSpec{
+				Strategy: v1alpha1.RolloutStrategy{
+					Canary: &v1alpha1.CanaryStrategy{
+						ScaleDownDelaySeconds: &scaleDownDelaySeconds,
+						TrafficRouting:        &v1alpha1.RolloutTrafficRouting{},
+					},
+				},
+			},
+		}
+		assert.Equal(t, scaleDownDelaySeconds, GetScaleDownDelaySecondsOrDefault(canaryWithTrafficRouting))
+	}
 }
 
 func TestGetAutoPromotionEnabledOrDefault(t *testing.T) {

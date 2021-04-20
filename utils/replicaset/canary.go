@@ -194,7 +194,7 @@ func CalculateReplicaCountsForCanary(rollout *v1alpha1.Rollout, newRS *appsv1.Re
 		if *newRS.Spec.Replicas-scaleDownCount < desiredNewRSReplicaCount {
 			newRSReplicaCount = desiredNewRSReplicaCount
 			// Calculating how many replicas were used to scale down to the desired count
-			scaleDownCount = scaleDownCount - (desiredNewRSReplicaCount - *newRS.Spec.Replicas)
+			scaleDownCount = scaleDownCount - (*newRS.Spec.Replicas - desiredNewRSReplicaCount)
 		} else {
 			// The controller is using every replica it can to get closer to desired state.
 			newRSReplicaCount = *newRS.Spec.Replicas - scaleDownCount
@@ -486,10 +486,10 @@ func SyncEphemeralPodMetadata(metadata *metav1.ObjectMeta, existingPodMetadata, 
 func SyncReplicaSetEphemeralPodMetadata(rs *appsv1.ReplicaSet, podMetadata *v1alpha1.PodTemplateMetadata) (*appsv1.ReplicaSet, bool) {
 	existingPodMetadata := ParseExistingPodMetadata(rs)
 	newObjectMeta, modified := SyncEphemeralPodMetadata(&rs.Spec.Template.ObjectMeta, existingPodMetadata, podMetadata)
+	rs = rs.DeepCopy()
 	if !modified {
 		return rs, false
 	}
-	rs = rs.DeepCopy()
 	rs.Spec.Template.ObjectMeta = *newObjectMeta
 	if podMetadata != nil {
 		// remember what we injected by annotating it

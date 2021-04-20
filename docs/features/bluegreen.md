@@ -46,7 +46,7 @@ spec:
       # autoPromotionEnabled disables automated promotion of the new stack by pausing the rollout
       # immediately before the promotion. If omitted, the default behavior is to promote the new
       # stack as soon as the ReplicaSet are completely ready/available.
-      # Rollouts can be resumed using: `kubectl argo rollouts resume ROLLOUT`
+      # Rollouts can be resumed using: `kubectl argo rollouts promote ROLLOUT`
       autoPromotionEnabled: false
 ```
 
@@ -81,6 +81,11 @@ Defaults to nil
 Check out the [Anti Affinity document](anti-affinity/anti-affinity.md) document for more information.
 
 Defaults to nil
+
+### maxUnavailable
+The maximum number of pods that can be unavailable during the update. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). This can not be 0 if MaxSurge is 0.
+
+Defaults to 0
 
 ### prePromotionAnalysis
 Configures the [Analysis](analysis.md#bluegreen-pre-promotion-analysis) before it switches traffic to the new version. The

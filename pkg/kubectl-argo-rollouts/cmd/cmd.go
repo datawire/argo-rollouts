@@ -5,6 +5,7 @@ import (
 
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/abort"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/create"
+	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/dashboard"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/get"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/lint"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/list"
@@ -13,6 +14,7 @@ import (
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/restart"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/retry"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/set"
+	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/status"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/terminate"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/undo"
 	"github.com/argoproj/argo-rollouts/pkg/kubectl-argo-rollouts/cmd/version"
@@ -64,5 +66,7 @@ func NewCmdArgoRollouts(o *options.ArgoRolloutsOptions) *cobra.Command {
 	cmd.AddCommand(terminate.NewCmdTerminate(o))
 	cmd.AddCommand(set.NewCmdSet(o))
 	cmd.AddCommand(undo.NewCmdUndo(o))
+	cmd.AddCommand(dashboard.NewCmdDashboard(o))
+	cmd.AddCommand(status.NewCmdStatus(o))
 	return cmd
 }

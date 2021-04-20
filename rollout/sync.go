@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +23,7 @@ import (
 	"github.com/argoproj/argo-rollouts/utils/defaults"
 	"github.com/argoproj/argo-rollouts/utils/diff"
 	experimentutil "github.com/argoproj/argo-rollouts/utils/experiment"
+	logutil "github.com/argoproj/argo-rollouts/utils/log"
 	replicasetutil "github.com/argoproj/argo-rollouts/utils/replicaset"
 )
 
@@ -157,16 +157,26 @@ func (c *rolloutContext) createDesiredReplicaSet() (*appsv1.ReplicaSet, error) {
 	// Set new replica set's annotation
 	annotations.SetNewReplicaSetAnnotations(c.rollout, newRS, newRevision, false)
 
-	if c.rollout.Spec.Strategy.Canary != nil {
+	if c.rollout.Spec.Strategy.Canary != nil || c.rollout.Spec.Strategy.BlueGreen != nil {
+		var ephemeralMetadata *v1alpha1.PodTemplateMetadata
 		if c.stableRS != nil && c.stableRS != c.newRS {
 			// If this is a canary rollout, with ephemeral *canary* metadata, and there is a stable RS,
 			// then inject the canary metadata so that all the RS's new pods get the canary labels/annotation
-			newRS, _ = replicasetutil.SyncReplicaSetEphemeralPodMetadata(newRS, c.rollout.Spec.Strategy.Canary.CanaryMetadata)
+			if c.rollout.Spec.Strategy.Canary != nil {
+				ephemeralMetadata = c.rollout.Spec.Strategy.Canary.CanaryMetadata
+			} else {
+				ephemeralMetadata = c.rollout.Spec.Strategy.BlueGreen.PreviewMetadata
+			}
 		} else {
 			// Otherwise, if stableRS is nil, we are in a brand-new rollout and then this replicaset
 			// will eventually become the stableRS, so we should inject the stable labels/annotation
-			newRS, _ = replicasetutil.SyncReplicaSetEphemeralPodMetadata(newRS, c.rollout.Spec.Strategy.Canary.StableMetadata)
+			if c.rollout.Spec.Strategy.Canary != nil {
+				ephemeralMetadata = c.rollout.Spec.Strategy.Canary.StableMetadata
+			} else {
+				ephemeralMetadata = c.rollout.Spec.Strategy.BlueGreen.ActiveMetadata
+			}
 		}
+		newRS, _ = replicasetutil.SyncReplicaSetEphemeralPodMetadata(newRS, ephemeralMetadata)
 	}
 
 	// Create the new ReplicaSet. If it already exists, then we need to check for possible
@@ -413,10 +423,10 @@ func (c *rolloutContext) calculateBaseStatus() v1alpha1.RolloutStatus {
 	return newStatus
 }
 
-// cleanupRollout is responsible for cleaning up a rollout ie. retains all but the latest N old replica sets
+// reconcileRevisionHistoryLimit is responsible for cleaning up a rollout ie. retains all but the latest N old replica sets
 // where N=r.Spec.RevisionHistoryLimit. Old replica sets are older versions of the podtemplate of a rollout kept
 // around by default 1) for historical reasons.
-func (c *rolloutContext) cleanupRollouts(oldRSs []*appsv1.ReplicaSet) error {
+func (c *rolloutContext) reconcileRevisionHistoryLimit(oldRSs []*appsv1.ReplicaSet) error {
 	ctx := context.TODO()
 	revHistoryLimit := defaults.GetRevisionHistoryLimitOrDefault(c.rollout)
 
@@ -473,47 +483,54 @@ func (c *rolloutContext) cleanupRollouts(oldRSs []*appsv1.ReplicaSet) error {
 // These conditions are needed so that we won't accidentally report lack of progress for resumed rollouts
 // that were paused for longer than progressDeadlineSeconds.
 func (c *rolloutContext) checkPausedConditions() error {
-	cond := conditions.GetRolloutCondition(c.rollout.Status, v1alpha1.RolloutProgressing)
-	if cond != nil && cond.Reason == conditions.TimedOutReason {
-		// If we have reported lack of progress, do not overwrite it with a paused condition.
-		return nil
-	}
-	pausedCondExists := cond != nil && cond.Reason == conditions.PausedRolloutReason
+	// Progressing condition
+	progCond := conditions.GetRolloutCondition(c.rollout.Status, v1alpha1.RolloutProgressing)
+	progCondPaused := progCond != nil && progCond.Reason == conditions.PausedRolloutReason
 
 	isPaused := len(c.rollout.Status.PauseConditions) > 0 || c.rollout.Spec.Paused
-	var updatedCondition *v1alpha1.RolloutCondition
-	if isPaused && !pausedCondExists {
-		updatedCondition = conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.PausedRolloutReason, conditions.PausedRolloutMessage)
-	} else if !isPaused && pausedCondExists {
-		updatedCondition = conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.ResumedRolloutReason, conditions.ResumeRolloutMessage)
+	abortCondExists := progCond != nil && progCond.Reason == conditions.RolloutAbortedReason
+
+	var updatedConditions []*v1alpha1.RolloutCondition
+
+	if (isPaused != progCondPaused) && !abortCondExists {
+		if isPaused {
+			updatedConditions = append(updatedConditions, conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.PausedRolloutReason, conditions.PausedRolloutMessage))
+		} else {
+			updatedConditions = append(updatedConditions, conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.ResumedRolloutReason, conditions.ResumeRolloutMessage))
+		}
 	}
 
-	abortCondExists := cond != nil && cond.Reason == conditions.RolloutAbortedReason
 	if !c.rollout.Status.Abort && abortCondExists {
-		updatedCondition = conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.RolloutRetryReason, conditions.RolloutRetryMessage)
+		updatedConditions = append(updatedConditions, conditions.NewRolloutCondition(v1alpha1.RolloutProgressing, corev1.ConditionUnknown, conditions.RolloutRetryReason, conditions.RolloutRetryMessage))
 	}
 
-	if updatedCondition == nil {
+	pauseCond := conditions.GetRolloutCondition(c.rollout.Status, v1alpha1.RolloutPaused)
+	pausedCondTrue := pauseCond != nil && pauseCond.Status == corev1.ConditionTrue
+
+	if (isPaused != pausedCondTrue) && !abortCondExists {
+		condStatus := corev1.ConditionFalse
+		if isPaused {
+			condStatus = corev1.ConditionTrue
+		}
+		updatedConditions = append(updatedConditions, conditions.NewRolloutCondition(v1alpha1.RolloutPaused, condStatus, conditions.PausedRolloutReason, conditions.PausedRolloutMessage))
+	}
+
+	if len(updatedConditions) == 0 {
 		return nil
 	}
 
 	newStatus := c.rollout.Status.DeepCopy()
-	err := c.patchCondition(c.rollout, newStatus, updatedCondition)
+	err := c.patchCondition(c.rollout, newStatus, updatedConditions...)
 	return err
 }
 
-func logWithVersionFields(entry *log.Entry, r *v1alpha1.Rollout) *log.Entry {
-	return entry.WithFields(map[string]interface{}{
-		"resourceVersion": r.ResourceVersion,
-		"generation":      r.Generation,
-	})
-}
-
-func (c *rolloutContext) patchCondition(r *v1alpha1.Rollout, newStatus *v1alpha1.RolloutStatus, condition *v1alpha1.RolloutCondition) error {
+func (c *rolloutContext) patchCondition(r *v1alpha1.Rollout, newStatus *v1alpha1.RolloutStatus, conditionList ...*v1alpha1.RolloutCondition) error {
 	ctx := context.TODO()
-	conditions.SetRolloutCondition(newStatus, *condition)
+	for _, condition := range conditionList {
+		conditions.SetRolloutCondition(newStatus, *condition)
+	}
 	newStatus.ObservedGeneration = strconv.Itoa(int(c.rollout.Generation))
-	logCtx := logWithVersionFields(c.log, r)
+	logCtx := logutil.WithVersionFields(c.log, r)
 	patch, modified, err := diff.CreateTwoWayMergePatch(
 		&v1alpha1.Rollout{
 			Status: r.Status,
@@ -637,7 +654,7 @@ func (c *rolloutContext) persistRolloutStatus(newStatus *v1alpha1.RolloutStatus)
 	ctx := context.TODO()
 	c.pauseContext.CalculatePauseStatus(newStatus)
 	newStatus.ObservedGeneration = strconv.Itoa(int(c.rollout.Generation))
-	logCtx := logWithVersionFields(c.log, c.rollout)
+	logCtx := logutil.WithVersionFields(c.log, c.rollout)
 	patch, modified, err := diff.CreateTwoWayMergePatch(
 		&v1alpha1.Rollout{
 			Status: c.rollout.Status,
@@ -745,4 +762,108 @@ func (c *rolloutContext) getReplicaFailures(allRSs []*appsv1.ReplicaSet, newRS *
 		}
 	}
 	return errorConditions
+}
+
+// resetRolloutStatus will reset the rollout status as if it is in a beginning of a new update
+func (c *rolloutContext) resetRolloutStatus(newStatus *v1alpha1.RolloutStatus) {
+	c.pauseContext.ClearPauseConditions()
+	c.pauseContext.RemoveAbort()
+	c.SetRestartedAt()
+	newStatus.PromoteFull = false
+	newStatus.BlueGreen.PrePromotionAnalysisRunStatus = nil
+	newStatus.BlueGreen.PostPromotionAnalysisRunStatus = nil
+	newStatus.BlueGreen.ScaleUpPreviewCheckPoint = false
+	newStatus.Canary.CurrentStepAnalysisRunStatus = nil
+	newStatus.Canary.CurrentBackgroundAnalysisRunStatus = nil
+	newStatus.CurrentStepIndex = replicasetutil.ResetCurrentStepIndex(c.rollout)
+}
+
+// shouldFullPromote returns a reason string explaining why a rollout should fully promote, marking
+// the desired ReplicaSet as stable. Returns empty string if the rollout is in middle of update
+func (c *rolloutContext) shouldFullPromote(newStatus v1alpha1.RolloutStatus) string {
+	// NOTE: the order of these checks are significant
+	if c.stableRS == nil {
+		return "Initial deploy"
+	} else if c.rollout.Spec.Strategy.Canary != nil {
+		if c.pauseContext.IsAborted() {
+			return ""
+		}
+		if c.newRS == nil || c.newRS.Status.AvailableReplicas != defaults.GetReplicasOrDefault(c.rollout.Spec.Replicas) {
+			return ""
+		}
+		if c.rollout.Status.PromoteFull {
+			return "Full promotion requested"
+		}
+		_, currentStepIndex := replicasetutil.GetCurrentCanaryStep(c.rollout)
+		stepCount := len(c.rollout.Spec.Strategy.Canary.Steps)
+		completedAllSteps := stepCount == 0 || (currentStepIndex != nil && *currentStepIndex == int32(stepCount))
+		if completedAllSteps {
+			return fmt.Sprintf("Completed all %d canary steps", stepCount)
+		}
+	} else if c.rollout.Spec.Strategy.BlueGreen != nil {
+		if newStatus.BlueGreen.ActiveSelector == "" {
+			// corner case - initial deployments won't update the active selector until stable is set.
+			// We must allow current to be marked stable, so that active can be marked to current, and
+			// subsequently stable marked to current too. (chicken and egg problem)
+			return "Initial deploy"
+		}
+		if newStatus.BlueGreen.ActiveSelector != newStatus.CurrentPodHash {
+			// active selector still pointing to previous RS, don't update stable yet
+			return ""
+		}
+		if c.rollout.Status.PromoteFull {
+			return "Full promotion requested"
+		}
+		if c.pauseContext.IsAborted() {
+			return ""
+		}
+		if c.rollout.Spec.Strategy.BlueGreen.PostPromotionAnalysis != nil {
+			// corner case - we fast-track the StableRS to be updated to CurrentPodHash when we are
+			// moving to a ReplicaSet within scaleDownDelay and wish to skip analysis.
+			if replicasetutil.HasScaleDownDeadline(c.newRS) {
+				return fmt.Sprintf("Rollback to '%s' within scaleDownDelay", c.newRS.Name)
+			}
+			currentPostPromotionAnalysisRun := c.currentArs.BlueGreenPostPromotion
+			if currentPostPromotionAnalysisRun == nil || currentPostPromotionAnalysisRun.Status.Phase != v1alpha1.AnalysisPhaseSuccessful {
+				// we have yet to start post-promotion analysis or post-promotion was not successful
+				return ""
+			}
+		}
+		return "Completed blue-green update"
+	}
+	return ""
+}
+
+// promoteStable will take appropriate action once we have promoted the current ReplicaSet as stable
+// e.g. reset status conditions, emit Kubernetes events, start scaleDownDelay, etc...
+func (c *rolloutContext) promoteStable(newStatus *v1alpha1.RolloutStatus, reason string) error {
+	c.pauseContext.ClearPauseConditions()
+	c.pauseContext.RemoveAbort()
+	newStatus.PromoteFull = false
+	newStatus.BlueGreen.ScaleUpPreviewCheckPoint = false
+	if c.rollout.Spec.Strategy.Canary != nil {
+		stepCount := int32(len(c.rollout.Spec.Strategy.Canary.Steps))
+		if stepCount > 0 {
+			newStatus.CurrentStepIndex = &stepCount
+		} else {
+			newStatus.CurrentStepIndex = nil
+		}
+	}
+	previousStableHash := newStatus.StableRS
+	if previousStableHash != newStatus.CurrentPodHash {
+		// only emit this event when we switched stable
+		newStatus.StableRS = newStatus.CurrentPodHash
+		msg := fmt.Sprintf("Set stable to revision %s (%s): %s", c.rollout.Annotations[annotations.RevisionAnnotation], newStatus.CurrentPodHash, reason)
+		c.log.Info(msg)
+		c.recorder.Event(c.rollout, corev1.EventTypeNormal, "SetStable", msg)
+		// Now that we've marked the desired RS as stable, start the scale-down countdown on the previous stable RS
+		previousStableRS, _ := replicasetutil.GetReplicaSetByTemplateHash(c.olderRSs, previousStableHash)
+		if replicasetutil.GetReplicaCountForReplicaSets([]*appsv1.ReplicaSet{previousStableRS}) > 0 {
+			err := c.addScaleDownDelay(previousStableRS)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

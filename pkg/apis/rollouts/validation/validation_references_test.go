@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"testing"
 
+	"k8s.io/utils/pointer"
+
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/serializer/yaml"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/argoproj/argo-rollouts/utils/unstructured"
+	k8sunstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 const successCaseVsvc = `apiVersion: networking.istio.io/v1alpha3
@@ -157,31 +161,135 @@ func TestValidateRolloutReferencedResources(t *testing.T) {
 
 func TestValidateAnalysisTemplateWithType(t *testing.T) {
 	t.Run("validate analysisTemplate - success", func(t *testing.T) {
+		rollout := getRollout()
 		template := getAnalysisTemplateWithType()
-		allErrs := ValidateAnalysisTemplateWithType(template)
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
 		assert.Empty(t, allErrs)
 	})
 
 	t.Run("validate inline analysisTemplate - failure", func(t *testing.T) {
+		rollout := getRollout()
 		count := intstr.FromInt(0)
 		template := getAnalysisTemplateWithType()
 		template.AnalysisTemplate.Spec.Metrics[0].Count = &count
-		allErrs := ValidateAnalysisTemplateWithType(template)
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
 		assert.Len(t, allErrs, 1)
 		msg := fmt.Sprintf("AnalysisTemplate %s has metric %s which runs indefinitely. Invalid value for count: %s", "analysis-template-name", "metric-name", count.String())
 		expectedError := field.Invalid(GetAnalysisTemplateWithTypeFieldPath(template.TemplateType, template.AnalysisIndex, template.CanaryStepIndex), template.AnalysisTemplate.Name, msg)
 		assert.Equal(t, expectedError.Error(), allErrs[0].Error())
 	})
 
+	t.Run("validate inline analysisTemplate argument - success", func(t *testing.T) {
+		rollout := getRollout()
+		template := getAnalysisTemplateWithType()
+		template.AnalysisTemplate.Spec.Args = []v1alpha1.Argument{
+			{
+				Name:  "service-name",
+				Value: pointer.StringPtr("service-name"),
+			},
+		}
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Empty(t, allErrs)
+	})
+
+	t.Run("validate background analysisTemplate - failure", func(t *testing.T) {
+		rollout := getRollout()
+		template := getAnalysisTemplateWithType()
+		template.TemplateType = BackgroundAnalysis
+		template.AnalysisTemplate.Spec.Args = []v1alpha1.Argument{
+			{
+				Name: "service-name",
+			},
+		}
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
+		assert.NotEmpty(t, allErrs)
+
+		rollout.Spec.Strategy.Canary.Analysis = &v1alpha1.RolloutAnalysisBackground{
+			RolloutAnalysis: v1alpha1.RolloutAnalysis{
+				Args: []v1alpha1.AnalysisRunArgument{
+					{
+						Name: "a-different-service-name",
+					},
+				},
+			},
+		}
+		allErrs = ValidateAnalysisTemplateWithType(rollout, template)
+		assert.NotEmpty(t, allErrs)
+
+		template.AnalysisTemplate.Spec.Args = append(template.AnalysisTemplate.Spec.Args, v1alpha1.Argument{Name: "second-service-name"})
+		allErrs = ValidateAnalysisTemplateWithType(rollout, template)
+		assert.NotEmpty(t, allErrs)
+	})
+
+	// verify background analysis matches the arguments in rollout spec
+	t.Run("validate background analysisTemplate - success", func(t *testing.T) {
+		rollout := getRollout()
+
+		template := getAnalysisTemplateWithType()
+		template.TemplateType = BackgroundAnalysis
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Empty(t, allErrs)
+
+		// default value should be fine
+		defaultValue := "value-name"
+		template.AnalysisTemplate.Spec.Args = []v1alpha1.Argument{
+			{
+				Name:  "service-name",
+				Value: &defaultValue,
+			},
+		}
+		allErrs = ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Empty(t, allErrs)
+
+		template.AnalysisTemplate.Spec.Args = []v1alpha1.Argument{
+			{
+				Name:  "service-name",
+				Value: pointer.StringPtr("service-name"),
+			},
+		}
+		rollout.Spec.Strategy.Canary.Analysis = &v1alpha1.RolloutAnalysisBackground{
+			RolloutAnalysis: v1alpha1.RolloutAnalysis{
+				Args: []v1alpha1.AnalysisRunArgument{
+					{
+						Name: "service-name",
+					},
+				},
+			},
+		}
+		allErrs = ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Empty(t, allErrs)
+	})
+
 	// verify background analysis does not care about a metric that runs indefinitely
 	t.Run("validate background analysisTemplate - success", func(t *testing.T) {
+		rollout := getRollout()
 		count := intstr.FromInt(0)
 		template := getAnalysisTemplateWithType()
 		template.TemplateType = BackgroundAnalysis
 		template.AnalysisTemplate.Spec.Metrics[0].Count = &count
-		allErrs := ValidateAnalysisTemplateWithType(template)
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
 		assert.Empty(t, allErrs)
 	})
+}
+
+func TestValidateAnalysisTemplateWithTypeResolveArgs(t *testing.T) {
+	rollout := getRollout()
+	template := getAnalysisTemplateWithType()
+	template.AnalysisTemplate.Spec.Args = append(template.AnalysisTemplate.Spec.Args, v1alpha1.Argument{Name: "invalid"})
+
+	t.Run("failure", func(t *testing.T) {
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Len(t, allErrs, 1)
+		msg := fmt.Sprintf("spec.strategy.canary.steps[0].analysis.templates[0].templateName: Invalid value: \"analysis-template-name\": AnalysisTemplate analysis-template-name has invalid arguments: args.invalid was not resolved")
+		assert.Equal(t, msg, allErrs[0].Error())
+	})
+
+	t.Run("success", func(t *testing.T) {
+		template.AnalysisTemplate.Spec.Args[0] = v1alpha1.Argument{Name: "valid", Value: pointer.StringPtr("true")}
+		allErrs := ValidateAnalysisTemplateWithType(rollout, template)
+		assert.Empty(t, allErrs)
+	})
+
 }
 
 func TestValidateIngress(t *testing.T) {
@@ -310,4 +418,64 @@ func TestGetServiceWithTypeFieldPath(t *testing.T) {
 		fldPath := GetServiceWithTypeFieldPath("DoesNotExist")
 		assert.Nil(t, fldPath)
 	})
+}
+
+func TestValidateAmbassadorMapping(t *testing.T) {
+	t.Run("will return no error if mapping is valid", func(t *testing.T) {
+		// given
+		t.Parallel()
+		baseMapping := `
+apiVersion: getambassador.io/v2
+kind:  Mapping
+metadata:
+  name: myapp-mapping
+  namespace: default
+spec:
+  prefix: /myapp/
+  rewrite: /myapp/
+  service: myapp:8080`
+		obj := unstructured.StrToUnstructuredUnsafe(baseMapping)
+
+		// when
+		errList := ValidateAmbassadorMapping(*obj)
+
+		// then
+		assert.NotNil(t, errList)
+		assert.Equal(t, 0, len(errList))
+	})
+	t.Run("will return error if base mapping defines weight", func(t *testing.T) {
+		// given
+		t.Parallel()
+		baseMapping := `
+apiVersion: getambassador.io/v2
+kind:  Mapping
+metadata:
+  name: myapp-mapping
+  namespace: default
+spec:
+  weight: 20
+  prefix: /myapp/
+  rewrite: /myapp/
+  service: myapp:8080`
+		obj := toUnstructured(t, baseMapping)
+
+		// when
+		errList := ValidateAmbassadorMapping(*obj)
+
+		// then
+		assert.NotNil(t, errList)
+		assert.Equal(t, 1, len(errList))
+	})
+}
+
+func toUnstructured(t *testing.T, manifest string) *k8sunstructured.Unstructured {
+	t.Helper()
+	obj := &k8sunstructured.Unstructured{}
+
+	dec := yaml.NewDecodingSerializer(k8sunstructured.UnstructuredJSONScheme)
+	_, _, err := dec.Decode([]byte(manifest), nil, obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return obj
 }

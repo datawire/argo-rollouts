@@ -165,6 +165,26 @@ func newReplicaSetWithStatus(r *v1alpha1.Rollout, replicas int, availableReplica
 	return rs
 }
 
+func newPausedCondition(isPaused bool) (v1alpha1.RolloutCondition, string) {
+	status := corev1.ConditionTrue
+	if !isPaused {
+		status = corev1.ConditionFalse
+	}
+	condition := v1alpha1.RolloutCondition{
+		LastTransitionTime: metav1.Now(),
+		LastUpdateTime:     metav1.Now(),
+		Message:            conditions.PausedRolloutMessage,
+		Reason:             conditions.PausedRolloutReason,
+		Status:             status,
+		Type:               v1alpha1.RolloutPaused,
+	}
+	conditionBytes, err := json.Marshal(condition)
+	if err != nil {
+		panic(err)
+	}
+	return condition, string(conditionBytes)
+}
+
 func newProgressingCondition(reason string, resourceObj runtime.Object, optionalMessage string) (v1alpha1.RolloutCondition, string) {
 	status := corev1.ConditionTrue
 	msg := ""
@@ -200,9 +220,9 @@ func newProgressingCondition(reason string, resourceObj runtime.Object, optional
 			// rollout-analysis-step-58bfdcfddd-4-random-fail
 			atName := ""
 			if resource.Spec.Strategy.Canary.Analysis != nil {
-				atName = resource.Spec.Strategy.Canary.Analysis.TemplateName
+				atName = resource.Spec.Strategy.Canary.Analysis.Templates[0].TemplateName
 			} else if resource.Spec.Strategy.Canary.Steps != nil && resource.Status.CurrentStepIndex != nil {
-				atName = resource.Spec.Strategy.Canary.Steps[*resource.Status.CurrentStepIndex].Analysis.TemplateName
+				atName = resource.Spec.Strategy.Canary.Steps[*resource.Status.CurrentStepIndex].Analysis.Templates[0].TemplateName
 			}
 			arName := fmt.Sprintf("%s-%s-%s-%s", resource.Name, resource.Status.CurrentPodHash, "10", atName)
 			msg = fmt.Sprintf(conditions.RolloutAnalysisRunFailedMessage, arName, resource.Name)
@@ -275,6 +295,16 @@ func generateConditionsPatch(available bool, progressingReason string, progressi
 		return fmt.Sprintf("[%s, %s]", availableCondition, progressingCondition)
 	}
 	return fmt.Sprintf("[%s, %s]", progressingCondition, availableCondition)
+}
+
+func generateConditionsPatchWithPause(available bool, progressingReason string, progressingResource runtime.Object, availableConditionFirst bool, progressingMessage string, isPaused bool) string {
+	_, availableCondition := newAvailableCondition(available)
+	_, progressingCondition := newProgressingCondition(progressingReason, progressingResource, progressingMessage)
+	_, pauseCondition := newPausedCondition(isPaused)
+	if availableConditionFirst {
+		return fmt.Sprintf("[%s, %s, %s]", availableCondition, progressingCondition, pauseCondition)
+	}
+	return fmt.Sprintf("[%s, %s, %s]", progressingCondition, pauseCondition, availableCondition)
 }
 
 // func updateBlueGreenRolloutStatus(r *v1alpha1.Rollout, preview, active string, availableReplicas, updatedReplicas, hpaReplicas int32, pause bool, available bool, progressingStatus string) *v1alpha1.Rollout {
@@ -416,7 +446,8 @@ func (f *fixture) newController(resync resyncFunc) (*Controller, informers.Share
 	// Pass in objects to to dynamicClient
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 0)
-	istioVirtualServiceInformer := dynamicInformerFactory.ForResource(istioutil.GetIstioGVR("v1alpha3")).Informer()
+	istioVirtualServiceInformer := dynamicInformerFactory.ForResource(istioutil.GetIstioVirtualServiceGVR()).Informer()
+	istioDestinationRuleInformer := dynamicInformerFactory.ForResource(istioutil.GetIstioDestinationRuleGVR()).Informer()
 
 	rolloutWorkqueue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Rollouts")
 	serviceWorkqueue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Services")
@@ -441,13 +472,13 @@ func (f *fixture) newController(resync resyncFunc) (*Controller, informers.Share
 		IngressInformer:                 k8sI.Extensions().V1beta1().Ingresses(),
 		RolloutsInformer:                i.Argoproj().V1alpha1().Rollouts(),
 		IstioVirtualServiceInformer:     istioVirtualServiceInformer,
+		IstioDestinationRuleInformer:    istioDestinationRuleInformer,
 		ResyncPeriod:                    resync(),
 		RolloutWorkQueue:                rolloutWorkqueue,
 		ServiceWorkQueue:                serviceWorkqueue,
 		IngressWorkQueue:                ingressWorkqueue,
 		MetricsServer:                   metricsServer,
 		Recorder:                        &FakeEventRecorder{},
-		DefaultIstioVersion:             "v1alpha3",
 	})
 
 	var enqueuedObjectsLock sync.Mutex
@@ -1464,28 +1495,31 @@ func TestGetReferencedIngressesNginx(t *testing.T) {
 	})
 }
 
-func TestGetReferencedVirtualServices(t *testing.T) {
+func TestGetAmbassadorMappings(t *testing.T) {
 	f := newFixture(t)
 	defer f.Close()
-	r := newCanaryRollout("rollout", 1, nil, nil, nil, intstr.FromInt(0), intstr.FromInt(1))
-	r.Spec.Strategy.Canary.TrafficRouting = &v1alpha1.RolloutTrafficRouting{
-		Istio: &v1alpha1.IstioTrafficRouting{
-			VirtualService: v1alpha1.IstioVirtualService{
-				Name: "istio-vsvc-name",
-			},
-		},
-	}
-	r.Namespace = metav1.NamespaceDefault
+	c, _, _ := f.newController(noResyncPeriodFunc)
+	schema := runtime.NewScheme()
+	c.dynamicclientset = dynamicfake.NewSimpleDynamicClient(schema)
 
-	t.Run("get referenced virtualService - fail", func(t *testing.T) {
-		c, _, _ := f.newController(noResyncPeriodFunc)
-		schema := runtime.NewScheme()
-		c.dynamicclientset = dynamicfake.NewSimpleDynamicClient(schema)
+	t.Run("will get mappings successfully", func(t *testing.T) {
+		// given
+		t.Parallel()
+		r := newCanaryRollout("rollout", 1, nil, nil, nil, intstr.FromInt(0), intstr.FromInt(1))
+		r.Spec.Strategy.Canary.TrafficRouting = &v1alpha1.RolloutTrafficRouting{
+			Ambassador: &v1alpha1.AmbassadorTrafficRouting{
+				Mappings: []string{"some-mapping"},
+			},
+		}
+		r.Namespace = metav1.NamespaceDefault
 		roCtx, err := c.newRolloutContext(r)
 		assert.NoError(t, err)
-		_, err = roCtx.getReferencedVirtualServices()
-		expectedErr := field.Invalid(field.NewPath("spec", "strategy", "canary", "trafficRouting", "istio", "virtualService", "name"), "istio-vsvc-name", "virtualservices.networking.istio.io \"istio-vsvc-name\" not found")
-		assert.Equal(t, expectedErr.Error(), err.Error())
+
+		// when
+		_, err = roCtx.getAmbassadorMappings()
+
+		// then
+		assert.Error(t, err)
 	})
 }
 
