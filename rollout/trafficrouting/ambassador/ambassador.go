@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	"github.com/argoproj/argo-rollouts/utils/defaults"
@@ -151,6 +152,7 @@ func (r *Reconciler) handleCanaryMapping(ctx context.Context, baseMappingName st
 
 	if desiredWeight == 0 {
 		r.Log.Infof("deleting canary mapping %q", canaryMapping.GetName())
+		time.Sleep(5 * time.Second)
 		return r.deleteCanaryMapping(ctx, canaryMapping, desiredWeight, r.Client)
 	}
 
