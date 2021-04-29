@@ -22,7 +22,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 146"
+            - "-text=VERSION 147"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
@@ -34,7 +34,6 @@ spec:
       canaryService: echo-canary
       trafficRouting:
         ambassador:
-          apiVersion: getambassador.io/v1
           mappings:
             - echo
             - echo2
