@@ -7,5 +7,6 @@ resources:
 - argo-rollouts-aggregate-roles.yaml
 - argo-rollouts-metrics-service.yaml
 images:
-- name: quay.io/argoproj/argo-rollouts
-  newTag: latest
+- name: quay.io/argoproj/argo-rollouts:latest
+  newName: datawire/argo-rollouts
+  newTag: vambassador-v3

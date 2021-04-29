@@ -12828,7 +12828,7 @@ spec:
       containers:
       - args:
         - --namespaced
-        image: quay.io/argoproj/argo-rollouts:latest
+        image: datawire/argo-rollouts:vambassador-v3
         imagePullPolicy: Always
         name: argo-rollouts
         ports:

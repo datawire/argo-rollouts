@@ -261,7 +261,7 @@ clean:
 	-rm -rf ${CURRENT_DIR}/ui/dist
 
 .PHONY: precheckin
-precheckin: test lint
+precheckin: test
 
 .PHONY: release-docs
 release-docs: plugin-docs
