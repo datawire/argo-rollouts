@@ -151,9 +151,15 @@ func (r *Reconciler) handleCanaryMapping(ctx context.Context, baseMappingName st
 	}
 
 	if desiredWeight == 0 {
-		r.Log.Infof("deleting canary mapping %q", canaryMapping.GetName())
-		time.Sleep(5 * time.Second)
-		return r.deleteCanaryMapping(ctx, canaryMapping, desiredWeight, r.Client)
+		go func() {
+			r.Log.Infof("deleting canary mapping %q", canaryMapping.GetName())
+			time.Sleep(5 * time.Second)
+			err := r.deleteCanaryMapping(ctx, canaryMapping, desiredWeight, r.Client)
+			if err != nil {
+				r.Log.Errorf("error deleting canary mapping: %s", err)
+			}
+		}()
+		//return nil
 	}
 
 	r.Log.Infof("updating canary mapping %q weight to %d", canaryMapping.GetName(), desiredWeight)
