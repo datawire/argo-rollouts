@@ -6,7 +6,7 @@ kind: Rollout
 metadata:
   name: echo-rollout
   annotations:
-    getambassador.io/rolloutId: "87544c25-710e-41fa-9fa8-3e0b2c0ed927"
+    getambassador.io/rolloutId: "355581bf-d3e4-4d00-9db7-2c2b2e43cbb4"
     getambassador.io/webhookUrl: "https://beta-app.datawire.io/cloud/webhooks/rollout"
 spec:
   replicas: 2
@@ -22,7 +22,7 @@ spec:
       containers:
         - image: hashicorp/http-echo
           args:
-            - "-text=VERSION 160"
+            - "-text=VERSION 161"
             - -listen=:8080
           imagePullPolicy: Always
           name: echo-v1
